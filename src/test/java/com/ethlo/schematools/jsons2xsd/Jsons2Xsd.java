@@ -1,4 +1,4 @@
-package com.ethlo.schematools.jsons2xsd;
+/*package com.ethlo.schematools.jsons2xsd;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -18,8 +18,6 @@ import org.w3c.dom.Node;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.databind.node.TextNode;
 
 public class Jsons2Xsd {
     private final static ObjectMapper mapper = new ObjectMapper();
@@ -62,38 +60,9 @@ public class Jsons2Xsd {
         typeMapping.put("string|style", "string");
     }
 
-    public static JsonNode upgradeToDbsSchema(JsonNode rootNode){
-    	JsonNode returnVal=rootNode;
-    	if(rootNode.has("definitions")){
-    		ObjectNode object = (ObjectNode) rootNode;
-    		object.set("properties", rootNode.get("definitions"));
-    		object.remove("definitions");
-    		object.set("type", new TextNode("object"));
-    		returnVal= object;
-    	}
-    	try{
-    	 ObjectMapper arrayMapper = new ObjectMapper();
-         String unfilteredContent=returnVal.toString();
-       
-         final String regex = "(([^}\\s]*)\"additionalProperties\":(?:[^\"]*[false]))";
-         String filteredContent=unfilteredContent.replaceAll(regex, "");  
-         
-         final String regex1 = "(([^}\\s]*)\"additionalItems\":(?:[^\"]*[false]))";
-         String finalfilteredContent=filteredContent.replaceAll(regex, "");  
-        
-         returnVal = arrayMapper.readTree(finalfilteredContent);
-    	}catch(Exception e){
-    		e.printStackTrace();
-    	}
-    	return returnVal;
-    }
-    
     public static Document convert(Reader jsonSchema, String targetNameSpaceUri, OuterWrapping wrapping, String name) throws IOException {
         JsonNode rootNode = mapper.readTree(jsonSchema);
-        
-        rootNode=upgradeToDbsSchema(rootNode);
-        name=handleCamelCasing(name);
-        
+
         final Document xsdDoc = XmlUtil.newDocument();
         xsdDoc.setXmlStandalone(true);
 
@@ -207,13 +176,6 @@ public class Jsons2Xsd {
         }
     }
 
-    private static String handleCamelCasing(String name){
-    	if(!Character.isUpperCase(name.charAt(1)))
-    		return name.substring(0, 1).toLowerCase() + name.substring(1);
-    	else
-    		return name;
-    	
-    }
     private static void doIterateSingle(String key, JsonNode val, Element elem, boolean required) {
     	
         final String xsdType = determineXsdType(key, val);
@@ -224,11 +186,6 @@ public class Jsons2Xsd {
         } else {
             name = key;
         }
-        
-        
-        name=handleCamelCasing(name);
-        
-        
         nodeElem.setAttribute("name", name);
 
         if (!"object".equals(xsdType) && !"array".equals(xsdType)) {
@@ -319,7 +276,7 @@ public class Jsons2Xsd {
 
     private static void handleObject(Element nodeElem, JsonNode val) {
         final JsonNode properties = val.get("properties");
-        if (properties != null && !val.has("oneOf")) {
+        if (properties != null) {
             System.out.println("In PROP");
             final Element complexType = createXsdElement(nodeElem, "complexType");
             final Element sequence = createXsdElement(complexType, "sequence");
@@ -328,72 +285,34 @@ public class Jsons2Xsd {
             doIterate(sequence, properties, getRequiredList(val));
         }
         if(val.has("oneOf")){
-        	System.out.println("In PROP oneOf");
+        	System.out.println("In PROP extended");
             final Element complexType = createXsdElement(nodeElem, "complexType");
             final Element sequence = createXsdElement(complexType, "sequence");
             final Element choice = createXsdElement(sequence, "choice");
-           
-        
-            try{
-            ObjectMapper arrayMapper = new ObjectMapper();
-            String unfilteredContent=val.toString();
-          
-            final String regex = "(([^}\\s]*)\"additionalProperties\":(?:[^\"]*[false]))";
-            String filteredContent=unfilteredContent.replaceAll(regex, "");  
-           
-            JsonNode arrNode = arrayMapper.readTree(filteredContent);
-            arrNode = arrNode.get("oneOf");
-            List<String> allReqParams=new ArrayList<String>();
-            
-            StringBuilder newPackedJson=new StringBuilder("{");
-            if (arrNode.isArray()) {
-            	System.out.println("********************** Manual changes required **********************");
-            	int count=1;
-                for (final JsonNode objNode : arrNode) {
-                    //System.out.println(objNode);
-                	String suggestedNodeName="dummyElement"+count;
-	                if(objNode.has("description"))
-	                    suggestedNodeName=objNode.get("description").toString().replaceAll("\\s","");
-	                    	  
-	                allReqParams.add(suggestedNodeName);
-	                System.out.println("Providing dummy element name : "+suggestedNodeName+" name inside 'oneOf'.");
-                    if(arrNode.size()!=count)
-                    	newPackedJson.append(suggestedNodeName+":").append(objNode.toString()).append(",");
-                    else
-                    	newPackedJson.append(suggestedNodeName+":").append(objNode.toString());
-                    
-                	count++;
-                }
-                newPackedJson.append("}");
-                System.out.println("***********************************End**********************************");
-            }
-            
-            ObjectMapper choiceMapper = new ObjectMapper();
-            JsonNode newPackedJsonObj = choiceMapper.readTree(newPackedJson.toString());
-            doIterate(choice, newPackedJsonObj, allReqParams);
-            }catch(Exception e){
-            	System.out.println("Malformed 'oneOf' clause . Please verify :"+val.toString());
-            	//e.printStackTrace();
-            }
-            /*String choicesString=choices.toString();
+            final JsonNode choices=val.get("oneOf");
+            String choicesString=choices.toString();
             choicesString=choicesString.substring(2,choicesString.length()-1);
-            choicesString="{\"properties\":{"+choicesString+"}";	
-            final String regex = "(([^}\\s]*)\"additionalProperties\":(?:[^\"]*[false]))";
-            choicesString=choicesString.replaceAll(regex, "");  
+            choicesString="{\"dummy\": {\"description\": \"dummy\",\"type\": \"object\", \"properties\":{"+choicesString+"}}";	
+           // final String regex = "(\"additionalProperties\":(?:[^\"]*[false]))";
+            //choicesString=choicesString.replaceAll(regex, "");
+            System.out.println(choicesString);
             ObjectMapper mapper = new ObjectMapper();
             try{
+           
+            //System.out.println(choicesString);
             JsonNode newChoiceObj = mapper.readTree(choicesString);
-            JsonNode props=newChoiceObj.get("properties");
+            System.out.println(newChoiceObj.toString());
+           // newChoiceObj.
+            
             List<String> allReqParams=new ArrayList<String>();
-            Iterator<String> keys=props.fieldNames();
+            Iterator<String> keys=newChoiceObj.fieldNames();
             while(keys.hasNext()){
             	allReqParams.add(keys.next().toString());
             }
-            
-            doIterate(choice, props, allReqParams);
+            doIterate(choice, newChoiceObj, allReqParams);
             }catch(Exception e){
             	e.printStackTrace();
-            }*/
+            }
         }
 
     }
@@ -444,14 +363,6 @@ public class Jsons2Xsd {
 
 
         final JsonNode arrItems = jsonNode.path("items");
-        String suggestedArrayElementName="dummyArrayElement_"+nodeElem.getAttribute("name");
-        if(arrItems.has("description"))
-        	suggestedArrayElementName=arrItems.get("description").toString().replaceAll("\\s","");
-        
-        System.out.println("********************** Manual changes required **********************");
-        System.out.println("Providing dummy element name : "+suggestedArrayElementName+" name inside 'array'.");
-        System.out.println("***********************************End**********************************");
-        
 //		final String arrayXsdType = getType(arrItems.path("type").textValue(), arrItems.path("format").textValue());
         final String arrayXsdType = determineXsdType(arrItems.path("type").textValue(), arrItems);
         final Element complexType = createXsdElement(nodeElem, "complexType");
@@ -474,19 +385,10 @@ public class Jsons2Xsd {
         // Max Items
         final Integer maxItems = getIntVal(jsonNode, "maxItems");
         arrElem.setAttribute("maxOccurs", maxItems != null ? Integer.toString(maxItems) : "unbounded");
-        
-        if(arrElem.hasAttribute("maxOccurs") || arrElem.hasAttribute("minOccurs"))
-        	arrElem.setAttribute("name", suggestedArrayElementName.replaceAll("\"", ""));
-        
 
     }
 
     private static String determineXsdType(String key, JsonNode node) {
-    	if(key==null)
-    		System.out.println("Error: Malformed JSON array.Please remove the '[' / ']' from the array.");
-    	if(key.toLowerCase().equals("oneof") && node.toString().contains("[")){
-    		return "object";
-    	}
         String jsonType = node.path("type").textValue();
         final String jsonFormat = node.path("format").textValue();
         final boolean isEnum = node.get("enum") != null;
@@ -535,3 +437,4 @@ public class Jsons2Xsd {
         return requiredList;
     }
 }
+*/
